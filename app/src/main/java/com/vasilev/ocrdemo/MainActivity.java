@@ -7,7 +7,6 @@ import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
-import android.util.Log;
 import android.util.SparseArray;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -16,12 +15,10 @@ import android.widget.Toast;
 
 import com.google.android.gms.vision.CameraSource;
 import com.google.android.gms.vision.Detector;
-import com.google.android.gms.vision.text.Text;
 import com.google.android.gms.vision.text.TextBlock;
 import com.google.android.gms.vision.text.TextRecognizer;
 
 import java.io.IOException;
-import java.util.List;
 
 import static com.google.android.gms.vision.CameraSource.CAMERA_FACING_BACK;
 
@@ -74,6 +71,7 @@ public class MainActivity extends AppCompatActivity {
         cameraSource = new CameraSource.Builder(this, textRecognizer)
                 .setAutoFocusEnabled(true)
                 .setFacing(CAMERA_FACING_BACK)
+                .setRequestedPreviewSize(2048, 1536)
                 .build();
 
 
