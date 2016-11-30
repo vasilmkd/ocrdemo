@@ -1,21 +1,20 @@
 package com.vasilev.ocrdemo;
 
 import android.Manifest;
+import android.app.Dialog;
+import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
-import android.util.SparseArray;
-import android.view.SurfaceHolder;
-import android.view.SurfaceView;
-import android.widget.TextView;
+import android.util.Log;
 import android.widget.Toast;
 
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.android.gms.vision.CameraSource;
-import com.google.android.gms.vision.Detector;
-import com.google.android.gms.vision.text.TextBlock;
 import com.google.android.gms.vision.text.TextRecognizer;
 
 import java.io.IOException;
@@ -27,82 +26,63 @@ public class MainActivity extends AppCompatActivity {
     private static final String LOG_TAG = MainActivity.class.getSimpleName();
 
     private static final int CAMERA_PERMISSION_REQUEST = 0;
+    private static final int HANDLE_GMS = 9001;
 
-    private SurfaceView surfaceView;
-    private TextView textView;
-    private CameraSource cameraSource;
+    private CameraSource mCameraSource;
+    private CameraSourcePreview mPreview;
+    private GraphicOverlay<OcrGraphic> mGraphicOverlay;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        surfaceView = (SurfaceView) findViewById(R.id.surface_view);
-        textView = (TextView) findViewById(R.id.text_view);
-        textView.setText("");
+        mPreview = (CameraSourcePreview) findViewById(R.id.preview);
+        mGraphicOverlay = (GraphicOverlay<OcrGraphic>) findViewById(R.id.graphic_overlay);
 
-        final TextRecognizer textRecognizer = new TextRecognizer.Builder(this).build();
+        int cameraAvailable = ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA);
+        if (cameraAvailable == PackageManager.PERMISSION_GRANTED) {
+            createCameraSource();
+        } else {
+            final String[] permissions = new String[] { Manifest.permission.CAMERA };
+            ActivityCompat.requestPermissions(this, permissions, CAMERA_PERMISSION_REQUEST);
+            return;
+        }
+    }
 
-        textRecognizer.setProcessor(new Detector.Processor<TextBlock>() {
-            @Override
-            public void release() {
-            }
+    private void createCameraSource() {
+        final Context context = getApplicationContext();
 
-            @Override
-            public void receiveDetections(Detector.Detections<TextBlock> detections) {
-                final SparseArray<TextBlock> items = detections.getDetectedItems();
-                final StringBuffer buffer = new StringBuffer();
+        final TextRecognizer textRecognizer = new TextRecognizer.Builder(context).build();
+        textRecognizer.setProcessor(new OcrDetectorProcessor(mGraphicOverlay));
 
-                for (int i = 0; i < items.size(); i++) {
-                    final TextBlock item = items.valueAt(i);
-                    buffer.append(item.getValue());
-                    buffer.append("\n");
-                }
-
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        textView.setText(buffer.toString());
-                    }
-                });
-            }
-        });
-
-        cameraSource = new CameraSource.Builder(this, textRecognizer)
+        mCameraSource = new CameraSource.Builder(this, textRecognizer)
                 .setAutoFocusEnabled(true)
                 .setFacing(CAMERA_FACING_BACK)
                 .setRequestedPreviewSize(2048, 1536)
                 .build();
+    }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        startCameraSource();
+    }
 
-        surfaceView.getHolder().addCallback(new SurfaceHolder.Callback() {
-            @Override
-            public void surfaceCreated(SurfaceHolder surfaceHolder) {
-                if (ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA)
-                        != PackageManager.PERMISSION_GRANTED) {
-                    ActivityCompat.requestPermissions(
-                            MainActivity.this,
-                            new String[]{Manifest.permission.CAMERA},
-                            CAMERA_PERMISSION_REQUEST);
-                    return;
-                }
-                try {
-                    cameraSource.start(surfaceHolder);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (mPreview != null) {
+            mPreview.stop();
+        }
+    }
 
-            @Override
-            public void surfaceChanged(SurfaceHolder surfaceHolder, int i, int i1, int i2) {
-
-            }
-
-            @Override
-            public void surfaceDestroyed(SurfaceHolder surfaceHolder) {
-                cameraSource.stop();
-            }
-        });
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (mPreview != null) {
+            mPreview.release();
+        }
     }
 
     @Override
@@ -113,17 +93,33 @@ public class MainActivity extends AppCompatActivity {
             case CAMERA_PERMISSION_REQUEST:
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
                         PackageManager.PERMISSION_GRANTED) {
-                    try {
-                        cameraSource.start(surfaceView.getHolder());
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
+                    createCameraSource();
+                    return;
                 } else {
                     Toast.makeText(this, "Camera permission is not granted", Toast.LENGTH_LONG).show();
                 }
                 break;
             default:
-                break;
+                super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        }
+    }
+
+    private void startCameraSource() throws SecurityException {
+        int code = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(
+                getApplicationContext());
+        if (code != ConnectionResult.SUCCESS) {
+            final Dialog dialog = GoogleApiAvailability.getInstance().getErrorDialog(this, code, HANDLE_GMS);
+            dialog.show();
+        }
+
+        if (mCameraSource != null) {
+            try {
+                mPreview.start(mCameraSource, mGraphicOverlay);
+            } catch (IOException e) {
+                Log.e(LOG_TAG, "Unable to start camera source.", e);
+                mCameraSource.release();
+                mCameraSource = null;
+            }
         }
     }
 }
